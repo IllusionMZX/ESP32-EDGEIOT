@@ -1,0 +1,26 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.espIdfPathWin": "d:\\ESP-IDF\\esp-idf-v5.5.1",
+  "idf.toolsPathWin": "D:\\Espressif",
+  "idf.pythonInstallPath": "D:\\Espressif\\tools\\idf-python\\3.11.2\\python.exe",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32s3"
+  },
+  "clangd.path": "D:\\Espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=D:\\Espressif\\tools\\xtensa-esp-elf\\esp-14.2.0_20241119\\xtensa-esp-elf\\bin\\xtensa-esp32s3-elf-gcc.exe",
+    "--compile-commands-dir=d:\\Code\\MCU\\ESP32\\station\\build"
+  ],
+  "idf.flashType": "UART",
+  "idf.portWin": "COM5",
+  "files.associations": {
+    "esp_wifi.h": "c",
+    "aiot_state_api.h": "c",
+    "freertos.h": "c",
+    "event_groups.h": "c"
+  }
+}
