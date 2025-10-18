@@ -259,7 +259,12 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("D:/Code/MCU/ESP32/station/build/esp-idf/lvgl__lvgl/cmake_install.cmake")
+  include("D:/Code/MCU/ESP32/station/build/esp-idf/sdmmc/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("D:/Code/MCU/ESP32/station/build/esp-idf/joltwallet__littlefs/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)

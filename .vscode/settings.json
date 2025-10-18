@@ -21,6 +21,10 @@
     "esp_wifi.h": "c",
     "aiot_state_api.h": "c",
     "freertos.h": "c",
-    "event_groups.h": "c"
+    "event_groups.h": "c",
+    "lvgl.h": "c",
+    "tft_espi.h": "c",
+    "*.inc": "c",
+    "aiot_mqtt_download_api.h": "c"
   }
 }

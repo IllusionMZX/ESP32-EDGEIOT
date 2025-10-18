@@ -6,24 +6,41 @@
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
 */
-#include <string.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-
+#include "esp_wifi_types_generic.h"
+#include "esp_system.h"
+#include "esp_littlefs.h"
+#include "driver/gpio.h"
+#include "driver/uart.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
 
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
+#include <sys/stat.h>
+
 #include "aiot_state_api.h"
 #include "aiot_sysdep_api.h"
 #include "aiot_mqtt_api.h"
+#include "aiot_ota_api.h"
+#include "aiot_mqtt_download_api.h"
+
+#ifdef __cplusplus
+}
+#endif
 
 
 /* The examples use WiFi configuration that you can set via project configuration menu
@@ -43,6 +60,11 @@ static EventGroupHandle_t s_wifi_event_group;
  * - we failed to connect after the maximum amount of retries */
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
+
+
+#define TXD_PIN (GPIO_NUM_4)
+#define RXD_PIN (GPIO_NUM_5)
+#define RX_BUF_SIZE (1024)
 
 static const char *TAG = "wifi station";
 
@@ -93,7 +115,7 @@ void wifi_init_sta(void)
         },
     };
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
     ESP_ERROR_CHECK(esp_wifi_start() );
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
@@ -135,9 +157,9 @@ void wifi_init_sta(void)
  */
 
 /* TODO: 替换为自己设备的三元组 */
-char *product_key       = "k1xu17JLQJa";
-char *device_name       = "ESP32";
-char *device_secret     = "3d00894e22fcd025a5c753c1b58c8cd6";
+char *product_key       = "k1xu1764jnp";
+char *device_name       = "ESP32S3";
+char *device_secret     = "56a372381ffbacf288327607e9350385";
 
 /* 位于portfiles/aiot_port文件夹下的系统适配函数集合 */
 extern aiot_sysdep_portfile_t g_aiot_sysdep_portfile;
@@ -149,6 +171,11 @@ static TaskHandle_t g_mqtt_process_task;
 static TaskHandle_t g_mqtt_recv_task;
 static uint8_t g_mqtt_process_task_running = 0;
 static uint8_t g_mqtt_recv_task_running = 0;
+
+void *g_ota_handle = NULL;
+void *g_dl_handle = NULL;
+uint32_t g_firmware_size = 0;
+static char g_new_version[32] = {0};
 
 /* TODO: 如果要关闭日志, 就把这个函数实现为空, 如果要减少日志, 可根据code选择不打印
  *
@@ -185,7 +212,7 @@ void demo_mqtt_event_handler(void *handle, const aiot_mqtt_event_t *event, void 
 
         /* SDK因为网络的状况而被动断开了连接, network是底层读写失败, heartbeat是没有按预期得到服务端心跳应答 */
         case AIOT_MQTTEVT_DISCONNECT: {
-            char *cause = (event->data.disconnect == AIOT_MQTTDISCONNEVT_NETWORK_DISCONNECT) ? ("network disconnect") :
+            const char *cause = (event->data.disconnect == AIOT_MQTTDISCONNEVT_NETWORK_DISCONNECT) ? ("network disconnect") :
                           ("heartbeat disconnect");
             printf("AIOT_MQTTEVT_DISCONNECT: %s\n", cause);
             /* TODO: 处理SDK被动断连, 不可以在这里调用耗时较长的阻塞函数 */
@@ -209,8 +236,8 @@ void demo_mqtt_default_recv_handler(void *handle, const aiot_mqtt_recv_t *packet
         break;
 
         case AIOT_MQTTRECV_SUB_ACK: {
-            printf("suback, res: -0x%04X, packet id: %d, max qos: %d\n",
-                   (unsigned int)-packet->data.sub_ack.res, packet->data.sub_ack.packet_id, packet->data.sub_ack.max_qos);
+            printf("suback, res: -0x%04lX, packet id: %d, max qos: %d\n",
+                   (unsigned long)-packet->data.sub_ack.res, packet->data.sub_ack.packet_id, packet->data.sub_ack.max_qos);
             /* TODO: 处理服务器对订阅请求的回应, 一般不处理 */
         }
         break;
@@ -264,6 +291,132 @@ void demo_mqtt_recv_task(void *args)
         }
     }
     vTaskDelete(NULL);
+}
+
+/* 执行OTA下载处理的线程 */
+void demo_ota_process_task(void *args)
+{
+    while (1) {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        if(g_dl_handle != NULL) {
+            int32_t res = aiot_mqtt_download_process(g_dl_handle);
+
+            if(STATE_MQTT_DOWNLOAD_SUCCESS == res) {
+                /* 升级成功，这里重启并且上报新的版本号 */
+                printf("mqtt download ota success \r\n");
+                aiot_mqtt_download_deinit(&g_dl_handle);
+                // 上报新版本号
+                if (g_new_version[0] != '\0') {
+                    int32_t res_report = aiot_ota_report_version(g_ota_handle, g_new_version);
+                    if (res_report < STATE_SUCCESS) {
+                        printf("report new version failed, code is -0x%04lX\r\n", (unsigned long)-res_report);
+                    } else {
+                        printf("reported new version: %s\r\n", g_new_version);
+                    }
+                }
+                // TODO: 处理升级成功后的逻辑，如重启设备
+            } else if(STATE_MQTT_DOWNLOAD_FAILED_RECVERROR == res
+                      || STATE_MQTT_DOWNLOAD_FAILED_TIMEOUT == res
+                      || STATE_MQTT_DOWNLOAD_FAILED_MISMATCH == res) {
+                printf("mqtt download ota failed \r\n");
+                aiot_mqtt_download_deinit(&g_dl_handle);
+            }
+        }
+    }
+}
+
+/* 下载收包回调, 用户调用 aiot_download_recv() 后, SDK收到数据会进入这个函数, 把下载到的数据交给用户 */
+/* TODO: 一般来说, 设备升级时, 会在这个回调中, 把下载到的数据写到Flash上 */
+void user_download_recv_handler(void *handle, const aiot_mqtt_download_recv_t *packet, void *userdata)
+{
+    uint32_t data_buffer_len = 0;
+
+    /* 目前只支持 packet->type 为 AIOT_MDRECV_DATA_RESP 的情况 */
+    if (!packet || AIOT_MDRECV_DATA_RESP != packet->type) {
+        return;
+    }
+
+    /* 用户应在此实现文件本地固化的操作 */
+    FILE *file = fopen("/littlefs/STM32-IAP-FREERTOS.bin", "ab");
+    fwrite(packet->data.data_resp.data, packet->data.data_resp.data_size, sizeof(int8_t), file);
+    fclose(file);
+
+    data_buffer_len = packet->data.data_resp.data_size;
+
+    printf("download %03ld%% done, +%lu bytes\r\n", (long)packet->data.data_resp.percent, (unsigned long)data_buffer_len);
+}
+
+/* 用户通过 aiot_ota_setopt() 注册的OTA消息处理回调, 如果SDK收到了OTA相关的MQTT消息, 会自动识别, 调用这个回调函数 */
+void user_ota_recv_handler(void *ota_handle, aiot_ota_recv_t *ota_msg, void *userdata)
+{
+    uint32_t request_size = 10 * 1024;
+    switch (ota_msg->type) {
+    case AIOT_OTARECV_FOTA: {
+        if (NULL == ota_msg->task_desc || ota_msg->task_desc->protocol_type != AIOT_OTA_PROTOCOL_MQTT) {
+            break;
+        }
+
+        if(g_dl_handle != NULL) {
+            aiot_mqtt_download_deinit(&g_dl_handle);
+        }
+
+        printf("OTA target firmware version: %s, size: %lu Bytes\r\n", ota_msg->task_desc->version,
+               (unsigned long)ota_msg->task_desc->size_total);
+        snprintf(g_new_version, sizeof(g_new_version), "%s", ota_msg->task_desc->version);
+
+        void *md_handler = aiot_mqtt_download_init();
+        aiot_mqtt_download_setopt(md_handler, AIOT_MDOPT_TASK_DESC, ota_msg->task_desc);
+        /* 设置下载一包的大小，对于资源受限设备可以调整该值大小 */
+        aiot_mqtt_download_setopt(md_handler, AIOT_MDOPT_DATA_REQUEST_SIZE, &request_size);
+
+        /* 部分场景下，用户如果只需要下载文件的一部分，即下载指定range的文件，可以设置文件起始位置、终止位置。
+         * 若设置range区间下载，单包报文的数据有CRC校验，但SDK将不进行完整文件MD5校验，
+         * 默认下载全部文件，单包报文的数据有CRC校验，并且SDK会对整个文件进行md5校验 */
+        // uint32_t range_start = 10, range_end = 50 * 1024 + 10;
+        // aiot_mqtt_download_setopt(md_handler, AIOT_MDOPT_RANGE_START, &range_start);
+        // aiot_mqtt_download_setopt(md_handler, AIOT_MDOPT_RANGE_END, &range_end);
+
+        aiot_mqtt_download_setopt(md_handler, AIOT_MDOPT_RECV_HANDLE, user_download_recv_handler);
+        g_dl_handle = md_handler;
+    }
+    break;
+    default:
+        break;
+    }
+}
+
+int sendData(const char* logName, const char* data)
+{
+    const int len = strlen(data);
+    const int txBytes = uart_write_bytes(UART_NUM_1, data, len);
+    ESP_LOGI(logName, "Wrote %d bytes", txBytes);
+    return txBytes;
+}
+
+static void tx_task(void *arg)
+{
+    static const char *TX_TASK_TAG = "TX_TASK";
+    esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
+    while (1) {
+        sendData(TX_TASK_TAG, "Hello world");
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+}
+
+static void rx_task(void *arg)
+{
+    static const char *RX_TASK_TAG = "RX_TASK";
+    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
+    uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE + 1);
+    while (1) {
+        const int rxBytes = uart_read_bytes(UART_NUM_1, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+        if (rxBytes > 0) {
+            data[rxBytes] = 0;
+            ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
+            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
+        }
+    }
+    free(data);
 }
 
 int linkkit_main(void)
@@ -326,31 +479,28 @@ int linkkit_main(void)
     if (res < STATE_SUCCESS) {
         /* 尝试建立连接失败, 销毁MQTT实例, 回收资源 */
         aiot_mqtt_deinit(&mqtt_handle);
-        printf("aiot_mqtt_connect failed: -0x%04X\n", (unsigned int)-res);
+        printf("aiot_mqtt_connect failed: -0x%04lX\n", (unsigned long)-res);
         return -1;
     }
 
-    /* MQTT 订阅topic功能示例, 请根据自己的业务需求进行使用 */
-    {
-        char *sub_topic = "/ota/device/upgrade/k1xu17JLQJa/ESP32";
-
-        res = aiot_mqtt_sub(mqtt_handle, sub_topic, NULL, 1, NULL);
-        if (res < 0) {
-            printf("aiot_mqtt_sub failed, res: -0x%04X\n", (unsigned int)-res);
-            return -1;
-        }
+    /* 与MQTT例程不同的是, 这里需要增加创建OTA会话实例的语句 */
+    void *ota_handle = aiot_ota_init();
+    if (NULL == ota_handle) {
+        goto exit;
     }
 
-    /* MQTT 发布消息功能示例, 请根据自己的业务需求进行使用 */
-    {
-        char *pub_topic = "/ota/device/inform/k1xu17JLQJa/ESP32";
-        char *pub_payload = "{\"id\":\"1\",\"version\":\"1.0\",\"params\":{\"ESP32\":0}}";
+    /* 用以下语句, 把OTA会话和MQTT会话关联起来 */
+    aiot_ota_setopt(ota_handle, AIOT_OTAOPT_MQTT_HANDLE, mqtt_handle);
+    /* 用以下语句, 设置OTA会话的数据接收回调, SDK收到OTA相关推送时, 会进入这个回调函数 */
+    aiot_ota_setopt(ota_handle, AIOT_OTAOPT_RECV_HANDLER, user_ota_recv_handler);
+    g_ota_handle = ota_handle;
 
-        res = aiot_mqtt_pub(mqtt_handle, pub_topic, (uint8_t *)pub_payload, strlen(pub_payload), 0);
-        if (res < 0) {
-            printf("aiot_mqtt_pub failed, res: -0x%04X\n", (unsigned int)-res);
-            return -1;
-        }
+    char *cur_version = "1.0.0";
+    /* 演示MQTT连接建立起来之后, 就可以上报当前设备的版本号了 */
+    res = aiot_ota_report_version(ota_handle, cur_version);
+    if (res < STATE_SUCCESS) {
+        printf("report version failed, code is -0x%04lX\r\n", (unsigned long)-res);
+        goto exit;
     }
 
     /* 创建一个单独的线程, 专用于执行aiot_mqtt_process, 它会自动发送心跳保活, 以及重发QoS1的未应答报文 */
@@ -358,7 +508,7 @@ int linkkit_main(void)
     BaseType_t ret = xTaskCreate(demo_mqtt_process_task, "mqtt_process", 4096, mqtt_handle, 5, &g_mqtt_process_task);
     if (ret != pdPASS) {
         printf("xTaskCreate demo_mqtt_process_task failed: %ld\n", (long)ret);
-        return -1;
+        goto exit;
     }
 
     /* 创建一个单独的线程用于执行aiot_mqtt_recv, 它会循环收取服务器下发的MQTT消息, 并在断线时自动重连 */
@@ -366,32 +516,63 @@ int linkkit_main(void)
     ret = xTaskCreate(demo_mqtt_recv_task, "mqtt_recv", 4096, mqtt_handle, 5, &g_mqtt_recv_task);
     if (ret != pdPASS) {
         printf("xTaskCreate demo_mqtt_recv_task failed: %ld\n", (long)ret);
-        return -1;
+        goto exit;
     }
 
-    /* 主循环进入休眠 */
-    while (1) {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    /* 创建一个单独的线程用于执行OTA下载处理 */
+    ret = xTaskCreate(demo_ota_process_task, "ota_process", 4096, NULL, 5, NULL);
+    if (ret != pdPASS) {
+        printf("xTaskCreate demo_ota_process_task failed: %ld\n", (long)ret);
+        goto exit;
     }
 
-    /* 断开MQTT连接, 一般不会运行到这里 */
-    res = aiot_mqtt_disconnect(mqtt_handle);
-    if (res < STATE_SUCCESS) {
+    /* 创建UART发送任务 */
+    ret = xTaskCreate(tx_task, "tx_task", 2048, NULL, 5, NULL);
+    if (ret != pdPASS) {
+        printf("xTaskCreate tx_task failed: %ld\n", (long)ret);
+        goto exit;
+    }
+
+    /* 创建UART接收任务 */
+    ret = xTaskCreate(rx_task, "rx_task", 4096, NULL, 5, NULL);
+    if (ret != pdPASS) {
+        printf("xTaskCreate rx_task failed: %ld\n", (long)ret);
+        goto exit;
+    }
+
+    /* 任务创建成功，返回 */
+    return 0;
+
+exit:
+    /* 断开MQTT连接 */
+    if (mqtt_handle) {
+        aiot_mqtt_disconnect(mqtt_handle);
         aiot_mqtt_deinit(&mqtt_handle);
-        printf("aiot_mqtt_disconnect failed: -0x%04X\n", (unsigned int)-res);
-        return -1;
     }
-
-    /* 销毁MQTT实例, 一般不会运行到这里 */
-    res = aiot_mqtt_deinit(&mqtt_handle);
-    if (res < STATE_SUCCESS) {
-        printf("aiot_mqtt_deinit failed: -0x%04X\n", (unsigned int)-res);
-        return -1;
+    /* 销毁OTA实例 */
+    if (ota_handle) {
+        aiot_ota_deinit(&ota_handle);
     }
 
     g_mqtt_process_task_running = 0;
     g_mqtt_recv_task_running = 0;
 
+    return -1;
+}
+
+int init_uart(void)
+{
+    const uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+    // Initialize UART
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, 1024, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_param_config(UART_NUM_1, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     return 0;
 }
 
@@ -409,6 +590,42 @@ void app_main(void)
     wifi_init_sta();
 
     /* start linkkit mqtt */
+    ESP_LOGI(TAG, "Initializing LittleFS");
+
+    esp_vfs_littlefs_conf_t conf = {
+        .base_path = "/littlefs",
+        .partition_label = "storage",
+        .format_if_mount_failed = true,
+        .dont_mount = false,
+    };
+
+    // Use settings defined above to initialize and mount LittleFS filesystem.
+    // Note: esp_vfs_littlefs_register is an all-in-one convenience function.
+    ret = esp_vfs_littlefs_register(&conf);
+
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE(TAG, "Failed to mount or format filesystem");
+        } else if (ret == ESP_ERR_NOT_FOUND) {
+            ESP_LOGE(TAG, "Failed to find LittleFS partition");
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize LittleFS (%s)", esp_err_to_name(ret));
+        }
+        return;
+    }
+
+    size_t total = 0, used = 0;
+    ret = esp_littlefs_info(conf.partition_label, &total, &used);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to get LittleFS partition information (%s)", esp_err_to_name(ret));
+        esp_littlefs_format(conf.partition_label);
+    } else {
+        ESP_LOGI(TAG, "Partition size: total: %d, used: %d", total, used);
+    }
+
+    ESP_LOGI(TAG, "UART1 initialization");
+    init_uart();
+
     ESP_LOGI(TAG, "Start linkkit mqtt");
     linkkit_main();
 }

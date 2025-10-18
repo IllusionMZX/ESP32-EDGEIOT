@@ -82,7 +82,9 @@ $<TARGET_FILE:idf::wpa_supplicant>
 $<TARGET_FILE:idf::esp_coex>
 $<TARGET_FILE:idf::esp_wifi>
 $<TARGET_FILE:idf::aliyun_mqtt>
-$<TARGET_FILE:idf::lvgl__lvgl>
+$<TARGET_FILE:idf::sdmmc>
+$<TARGET_FILE:idf::joltwallet__littlefs>
+$<TARGET_FILE:__idf_sdmmc>
 $<TARGET_FILE:idf::main>
 $<TARGET_FILE:__idf_aliyun_mqtt>
-$<TARGET_FILE:__idf_lvgl__lvgl>
+$<TARGET_FILE:__idf_joltwallet__littlefs>

@@ -82,7 +82,9 @@ D:/Code/MCU/ESP32/station/build/esp-idf/wpa_supplicant/libwpa_supplicant.a
 D:/Code/MCU/ESP32/station/build/esp-idf/esp_coex/libesp_coex.a
 D:/Code/MCU/ESP32/station/build/esp-idf/esp_wifi/libesp_wifi.a
 D:/Code/MCU/ESP32/station/build/esp-idf/aliyun_mqtt/libaliyun_mqtt.a
-D:/Code/MCU/ESP32/station/build/esp-idf/lvgl__lvgl/liblvgl__lvgl.a
+D:/Code/MCU/ESP32/station/build/esp-idf/sdmmc/libsdmmc.a
+D:/Code/MCU/ESP32/station/build/esp-idf/joltwallet__littlefs/libjoltwallet__littlefs.a
+D:/Code/MCU/ESP32/station/build/esp-idf/sdmmc/libsdmmc.a
 D:/Code/MCU/ESP32/station/build/esp-idf/main/libmain.a
 D:/Code/MCU/ESP32/station/build/esp-idf/aliyun_mqtt/libaliyun_mqtt.a
-D:/Code/MCU/ESP32/station/build/esp-idf/lvgl__lvgl/liblvgl__lvgl.a
+D:/Code/MCU/ESP32/station/build/esp-idf/joltwallet__littlefs/libjoltwallet__littlefs.a

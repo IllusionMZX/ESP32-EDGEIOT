@@ -3,15 +3,18 @@ dependencies:
     source:
       type: idf
     version: 5.5.1
-  lvgl/lvgl:
-    component_hash: b702d642e03e95928046d5c6726558e6444e112420c77efa5fdb6650b0a13c5d
-    dependencies: []
+  joltwallet/littlefs:
+    component_hash: 8e12955f47e27e6070b76715a96d6c75fc2b44f069e8c33679332d9bdd3120c4
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 9.3.0
+    version: 1.20.1
 direct_dependencies:
-- lvgl/lvgl
-manifest_hash: f8654332ee19a076179b2e1b51188a53ef2ad74f9730a2b4e2327f671789bce5
+- joltwallet/littlefs
+manifest_hash: 31681cdd2acc7e86ef7ed76ccd2597a457a8adaba34bf9dfc2fb2b9b1ab384ea
 target: esp32s3
 version: 2.0.0
