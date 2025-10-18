@@ -66,6 +66,16 @@ static EventGroupHandle_t s_wifi_event_group;
 #define RXD_PIN (GPIO_NUM_5)
 #define RX_BUF_SIZE (1024)
 
+
+// IAP协议定义
+#define IAP_CMD_START 0x55AA
+#define IAP_CMD_DATA  0x33CC
+#define IAP_CMD_END   0x99FF
+#define IAP_ACK       0xA5
+#define IAP_NACK      0x5A
+
+bool send_firmware_via_uart(const char *file_path);
+
 static const char *TAG = "wifi station";
 
 static int s_retry_num = 0;
@@ -305,6 +315,28 @@ void demo_ota_process_task(void *args)
                 /* 升级成功，这里重启并且上报新的版本号 */
                 printf("mqtt download ota success \r\n");
                 aiot_mqtt_download_deinit(&g_dl_handle);
+                                
+                // 新增：通过UART1发送固件给STM32，支持重试
+                int retry_count = 0;
+                const int max_retries = 3;
+                bool send_success = false;
+                while (retry_count < max_retries) {
+                    if (send_firmware_via_uart("/littlefs/STM32-IAP-FREERTOS.bin")) {
+                        ESP_LOGI("IAP", "Firmware sent to STM32 successfully");
+                        send_success = true;
+                        break;
+                    } else {
+                        ESP_LOGE("IAP", "Failed to send firmware to STM32, retry %d/%d", retry_count + 1, max_retries);
+                        retry_count++;
+                        if (retry_count < max_retries) {
+                            vTaskDelay(pdMS_TO_TICKS(5000));  // 等待5秒后重试
+                        }
+                    }
+                }
+                if (!send_success) {
+                    ESP_LOGE("IAP", "All retries failed, firmware not sent to STM32");
+                }
+
                 // 上报新版本号
                 if (g_new_version[0] != '\0') {
                     int32_t res_report = aiot_ota_report_version(g_ota_handle, g_new_version);
@@ -393,31 +425,31 @@ int sendData(const char* logName, const char* data)
     return txBytes;
 }
 
-static void tx_task(void *arg)
-{
-    static const char *TX_TASK_TAG = "TX_TASK";
-    esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
-    while (1) {
-        sendData(TX_TASK_TAG, "Hello world");
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-    }
-}
+// static void tx_task(void *arg)
+// {
+//     static const char *TX_TASK_TAG = "TX_TASK";
+//     esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
+//     while (1) {
+//         sendData(TX_TASK_TAG, "Hello world");
+//         vTaskDelay(2000 / portTICK_PERIOD_MS);
+//     }
+// }
 
-static void rx_task(void *arg)
-{
-    static const char *RX_TASK_TAG = "RX_TASK";
-    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
-    uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE + 1);
-    while (1) {
-        const int rxBytes = uart_read_bytes(UART_NUM_1, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
-        if (rxBytes > 0) {
-            data[rxBytes] = 0;
-            ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
-            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
-        }
-    }
-    free(data);
-}
+// static void rx_task(void *arg)
+// {
+//     static const char *RX_TASK_TAG = "RX_TASK";
+//     esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
+//     uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE + 1);
+//     while (1) {
+//         const int rxBytes = uart_read_bytes(UART_NUM_1, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+//         if (rxBytes > 0) {
+//             data[rxBytes] = 0;
+//             ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
+//             ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
+//         }
+//     }
+//     free(data);
+// }
 
 int linkkit_main(void)
 {
@@ -495,7 +527,7 @@ int linkkit_main(void)
     aiot_ota_setopt(ota_handle, AIOT_OTAOPT_RECV_HANDLER, user_ota_recv_handler);
     g_ota_handle = ota_handle;
 
-    char *cur_version = "1.0.0";
+    char *cur_version = "1.0.1";
     /* 演示MQTT连接建立起来之后, 就可以上报当前设备的版本号了 */
     res = aiot_ota_report_version(ota_handle, cur_version);
     if (res < STATE_SUCCESS) {
@@ -526,19 +558,19 @@ int linkkit_main(void)
         goto exit;
     }
 
-    /* 创建UART发送任务 */
-    ret = xTaskCreate(tx_task, "tx_task", 2048, NULL, 5, NULL);
-    if (ret != pdPASS) {
-        printf("xTaskCreate tx_task failed: %ld\n", (long)ret);
-        goto exit;
-    }
+    // /* 创建UART发送任务 */
+    // ret = xTaskCreate(tx_task, "tx_task", 2048, NULL, 5, NULL);
+    // if (ret != pdPASS) {
+    //     printf("xTaskCreate tx_task failed: %ld\n", (long)ret);
+    //     goto exit;
+    // }
 
-    /* 创建UART接收任务 */
-    ret = xTaskCreate(rx_task, "rx_task", 4096, NULL, 5, NULL);
-    if (ret != pdPASS) {
-        printf("xTaskCreate rx_task failed: %ld\n", (long)ret);
-        goto exit;
-    }
+    // /* 创建UART接收任务 */
+    // ret = xTaskCreate(rx_task, "rx_task", 4096, NULL, 5, NULL);
+    // if (ret != pdPASS) {
+    //     printf("xTaskCreate rx_task failed: %ld\n", (long)ret);
+    //     goto exit;
+    // }
 
     /* 任务创建成功，返回 */
     return 0;
@@ -558,6 +590,129 @@ exit:
     g_mqtt_recv_task_running = 0;
 
     return -1;
+}
+
+// 发送命令
+void send_command(uart_port_t uart_num, uint16_t cmd) {
+    uint8_t cmd_bytes[2];
+    cmd_bytes[0] = cmd & 0xFF;
+    cmd_bytes[1] = (cmd >> 8) & 0xFF;
+    uart_write_bytes(uart_num, (const char*)cmd_bytes, 2);
+    ESP_LOGI("IAP", "Sent command: 0x%04X", cmd);
+}
+
+// 等待ACK/NACK
+bool wait_ack(uart_port_t uart_num, TickType_t timeout_ticks) {
+    uint8_t data;
+    TickType_t start = xTaskGetTickCount();
+    while ((xTaskGetTickCount() - start) < timeout_ticks) {
+        int len = uart_read_bytes(uart_num, &data, 1, pdMS_TO_TICKS(10));
+        if (len > 0) {
+            if (data == IAP_ACK) {
+                ESP_LOGI("IAP", "Received ACK");
+                return true;
+            } else if (data == IAP_NACK) {
+                ESP_LOGI("IAP", "Received NACK");
+                return false;
+            }
+        }
+    }
+    ESP_LOGW("IAP", "ACK timeout");
+    return false;
+}
+
+// 等待STM32准备消息
+bool wait_for_ready_message(uart_port_t uart_num, TickType_t timeout_ticks) {
+    char buffer[256];
+    TickType_t start = xTaskGetTickCount();
+    while ((xTaskGetTickCount() - start) < timeout_ticks) {
+        int len = uart_read_bytes(uart_num, (uint8_t*)buffer, sizeof(buffer) - 1, pdMS_TO_TICKS(100));
+        if (len > 0) {
+            buffer[len] = '\0';
+            ESP_LOGI("IAP", "Received: %s", buffer);
+            if (strstr(buffer, "Ready for file size")) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// 通过UART发送固件
+bool send_firmware_via_uart(const char *file_path) {
+    FILE *file = fopen(file_path, "rb");
+    if (!file) {
+        ESP_LOGE("IAP", "Failed to open file: %s", file_path);
+        return false;
+    }
+
+    // 获取文件大小
+    fseek(file, 0, SEEK_END);
+    uint32_t file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    ESP_LOGI("IAP", "File size: %lu bytes", file_size);
+
+    // 清空UART缓冲区
+    uart_flush(UART_NUM_1);
+
+    // 1. 发送开始命令并等待ACK
+    send_command(UART_NUM_1, IAP_CMD_START);
+    if (!wait_ack(UART_NUM_1, pdMS_TO_TICKS(15000))) {  // 匹配Python的timeout=15
+        fclose(file);
+        return false;
+    }
+
+    // 发送文件大小
+    uint8_t size_bytes[4];
+    size_bytes[0] = file_size & 0xFF;
+    size_bytes[1] = (file_size >> 8) & 0xFF;
+    size_bytes[2] = (file_size >> 16) & 0xFF;
+    size_bytes[3] = (file_size >> 24) & 0xFF;
+    uart_write_bytes(UART_NUM_1, (const char*)size_bytes, 4);
+    ESP_LOGI("IAP", "Sent file size: %lu", file_size);
+
+    if (!wait_ack(UART_NUM_1, pdMS_TO_TICKS(15000))) {
+        fclose(file);
+        return false;
+    }
+
+    // 2. 分包发送数据（每包128字节）
+    uint8_t packet[128];
+    uint32_t total_packets = (file_size + 127) / 128;
+    for (uint32_t i = 0; i < total_packets; i++) {
+        size_t packet_size = fread(packet, 1, 128, file);
+        if (packet_size == 0) break;
+
+        // 发送数据命令
+        send_command(UART_NUM_1, IAP_CMD_DATA);
+        vTaskDelay(pdMS_TO_TICKS(10));  // 小延迟，匹配Python的time.sleep(0.01)
+
+        // 发送包大小
+        uint8_t size_buf[2];
+        size_buf[0] = packet_size & 0xFF;
+        size_buf[1] = (packet_size >> 8) & 0xFF;
+        uart_write_bytes(UART_NUM_1, (const char*)size_buf, 2);
+        vTaskDelay(pdMS_TO_TICKS(10));
+
+        // 发送数据
+        uart_write_bytes(UART_NUM_1, (const char*)packet, packet_size);
+
+        ESP_LOGI("IAP", "Sent packet %lu/%lu (%zu bytes)", i + 1, total_packets, packet_size);
+
+        if (!wait_ack(UART_NUM_1, pdMS_TO_TICKS(10000))) {  // 默认timeout=10秒
+            fclose(file);
+            return false;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));  // 适当延迟
+    }
+
+    // 3. 发送结束命令
+    send_command(UART_NUM_1, IAP_CMD_END);
+    bool success = wait_ack(UART_NUM_1, pdMS_TO_TICKS(10000));
+
+    fclose(file);
+    return success;
 }
 
 int init_uart(void)

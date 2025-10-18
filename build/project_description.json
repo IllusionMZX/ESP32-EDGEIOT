@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "wifi_station",
-    "project_version":    "ae43d54-dirty",
+    "project_version":    "c27e1f7-dirty",
     "project_path":       "D:/Code/MCU/ESP32/station",
     "idf_path":           "D:/ESP-IDF/esp-idf-v5.5.1",
     "build_dir":          "D:/Code/MCU/ESP32/station/build",
