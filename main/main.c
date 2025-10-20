@@ -27,7 +27,7 @@ extern "C" {
 }
 #endif
 
-static const char *TAG = "station_example_main";
+static const char *TAG = "iot_platform_example_main";
 
 void app_main(void)
 {
