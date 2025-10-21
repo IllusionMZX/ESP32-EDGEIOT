@@ -1,0 +1,33 @@
+/* 
+ * 简单的应用程序测试代码
+ * 放在应用程序的 main.c 开头，用于测试跳转是否正常
+ */
+
+// 在应用程序 main() 函数开头添加这些代码：
+
+void test_application_start(void)
+{
+    // 简单的LED闪烁测试
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET); // 点亮LED
+    HAL_Delay(500);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);   // 熄灭LED
+    HAL_Delay(500);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET); // 再次点亮
+    HAL_Delay(500);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);   // 熄灭
+}
+
+// 在应用程序的 main() 函数最开始调用：
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    
+    // 测试应用程序是否正常启动
+    test_application_start();
+    
+    // 继续你的FreeRTOS初始化...
+    
+    return 0;
+}

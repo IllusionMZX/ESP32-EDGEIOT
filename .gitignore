@@ -2,3 +2,6 @@ build/
 components/
 managed_components/
 .vscode/
+STM32-IAP/STM32-IAP-Bootloader/Debug/
+STM32-IAP/STM32-IAP-FreeRTOS/Debug/
+STM32-IAP/STM32-IAP-FreeRTOS/Middlewares/
