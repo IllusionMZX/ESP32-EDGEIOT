@@ -1,0 +1,3 @@
+[submodule "LVGL-Simulator"]
+	path = LVGL-Simulator
+	url = https://github.com/IllusionMZX/LVGLMioIOTMgmtPlat.git
