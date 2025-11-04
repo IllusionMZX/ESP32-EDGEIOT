@@ -3,7 +3,7 @@
 
 esp_err_t mount_storage_littlefs(const char* base_path)
 {
-    static const char *TAG = "example_mount";
+    static const char *TAG = "littlefs_mount";
     esp_vfs_littlefs_conf_t conf = {
         .base_path = "/littlefs",
         .partition_label = "storage",

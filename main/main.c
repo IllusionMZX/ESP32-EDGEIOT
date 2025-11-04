@@ -22,6 +22,7 @@ extern "C" {
 #include "bsp_wifi_server/wifi_init.h"
 #include "bsp_aliyun_mqtt/aliyun_mqtt.h"
 #include "bsp_wifi_server/file_server.h"
+#include "bsp_usb/usb_cdc.h"
 
 #ifdef __cplusplus
 }
@@ -49,6 +50,10 @@ void app_main(void)
 
     ESP_LOGI(TAG, "UART1 initialization");
     init_uart();
+
+    /* start usb cdc */
+    ESP_LOGI(TAG, "Starting USB CDC");
+    usb_cdc_init();
 
     /* start linkkit mqtt */
     ESP_LOGI(TAG, "Start linkkit mqtt");

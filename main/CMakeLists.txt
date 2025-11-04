@@ -1,6 +1,6 @@
-file(GLOB_RECURSE MAIN_SRC "bsp_aliyun_mqtt/*.c" "bsp_iap/*.c" "bsp_littlefs/*.c" "bsp_uart/*.c" "bsp_wifi_server/*.c")
+file(GLOB_RECURSE MAIN_SRC "bsp_aliyun_mqtt/*.c" "bsp_iap/*.c" "bsp_littlefs/*.c" "bsp_uart/*.c" "bsp_wifi_server/*.c" "bsp_usb/*.c")
 
-set(MAIN_INCLUDE_DIRS "." "bsp_aliyun_mqtt" "bsp_iap" "bsp_littlefs" "bsp_uart" "bsp_wifi_server")
+set(MAIN_INCLUDE_DIRS "." "bsp_aliyun_mqtt" "bsp_iap" "bsp_littlefs" "bsp_uart" "bsp_wifi_server" "bsp_usb")
 
 idf_component_register(SRCS "main.c" ${MAIN_SRC}
                     PRIV_REQUIRES esp_wifi nvs_flash mbedtls esp_driver_uart esp_driver_gpio esp_http_server aliyun_mqtt
