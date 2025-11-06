@@ -137,6 +137,6 @@ void usb_cdc_init(void)
 
     ESP_LOGI(TAG, "USB initialization DONE");
 
-    xTaskCreate(usb_cdc_task, "usb_cdc_task", 4096, NULL, 5, NULL);
+    xTaskCreate(usb_cdc_task, "usb_cdc_task", 4096, NULL, 10, NULL);
 }
 

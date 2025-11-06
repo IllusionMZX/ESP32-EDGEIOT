@@ -23,6 +23,7 @@ extern "C" {
 #include "bsp_aliyun_mqtt/aliyun_mqtt.h"
 #include "bsp_wifi_server/file_server.h"
 #include "bsp_usb/usb_cdc.h"
+#include "bsp_bluetooth/bsp_nimble_led.h"
 
 #ifdef __cplusplus
 }
@@ -58,6 +59,10 @@ void app_main(void)
     /* start linkkit mqtt */
     ESP_LOGI(TAG, "Start linkkit mqtt");
     linkkit_main();
+
+    /* start nimble led */
+    ESP_LOGI(TAG, "Starting NimBLE LED");
+    bsp_nimble_led_init();
 
     /* start file server */
     ESP_LOGI(TAG, "Starting file server");
